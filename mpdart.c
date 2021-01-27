@@ -14,14 +14,17 @@
 #include <X11/Xutil.h>
 
 /* TODO image metadata images
-   TODO handle disconnection errors
    TODO fix stutter on resize */
 
 /* mpd globals */
 struct mpd_connection* connection = 0;
 int mpd_fd = 0;
 char* mpd_db_dir = 0;
+char* mpd_host = 0;
+unsigned mpd_port = 0;
+unsigned mpd_timeout = 0;
 
+/* x globals */
 Display* xdisplay;
 int xscreen;
 Visual* xvisual;
@@ -29,7 +32,9 @@ Colormap xcolormap;
 int xdepth;
 Window xwindow;
 GC gc;
+unsigned int ww = 256, wh = 256; 
 
+/* imlib globals */
 Imlib_Updates im_updates;
 Imlib_Image im_buffer, im_image = 0;
 Imlib_Color_Range range;
@@ -37,11 +42,13 @@ char* im_image_path;
 int im_w, im_h;
 
 
+/* print to stderr and exit */
 void die(const char* msg) {
 	fprintf(stderr, "FATAL: %s\n", msg);
 	exit(1);
 }
 
+/* print to stderr */
 void warn(const char* msg) {
 	fprintf(stderr, "WARNING: %s\n", msg);
 }
@@ -73,7 +80,6 @@ char* asprintf(const char* fmt, ...) {
 	return ret;
 }
 
-/* currently only works once... why? */
 void set_window_name(char* name) {
 	int len = strlen(name);
 
@@ -123,14 +129,14 @@ void imlib_update(char* path) {
 
 }
 
-void imlib_render(int up_w, int up_h) {
+void imlib_render(void) {
 
 	if (!im_image || !im_image_path)
 		return;
 
 	imlib_blend_image_onto_image(im_image, 0,
 			0, 0, im_w, im_h,
-			0, 0, up_w, up_h);
+			0, 0, ww, wh);
 
 	imlib_render_image_on_drawable(0, 0);
 
@@ -213,13 +219,35 @@ void update_mpd_song(void) {
 	mpd_song_free(song);
 }
 
+/* check and handle errors */
+void mpd_check_error(void) {
+	switch (mpd_connection_get_error(connection)) {
+		case MPD_ERROR_OOM:
+		case MPD_ERROR_ARGUMENT:
+		case MPD_ERROR_SYSTEM:
+			die(mpd_connection_get_error_message(connection));
+		case MPD_ERROR_SERVER:
+		case MPD_ERROR_MALFORMED:
+			warn(mpd_connection_get_error_message(connection));
+		case MPD_ERROR_RESOLVER:
+		case MPD_ERROR_CLOSED:
+			while(mpd_connection_get_error(connection) != MPD_ERROR_SUCCESS) {
+				warn("Unable to connect to mpd, retrying in 5 seconds");
+				sleep(5);
+
+				mpd_connection_free(connection);
+				connection = mpd_connection_new(mpd_host, mpd_port, mpd_timeout);
+
+				if (!connection)
+					die("Unable to allocate memory for mpd_connection struct");
+			}
+			printf("Successfully connected to mpd again!\n");
+	}
+}
+
 int main(int argc, char** argv) {
 
 	/* parse args */
-	char* mpd_host = 0;
-	unsigned mpd_port = 0;
-	unsigned mpd_timeout = 0;
-
 	while (*++argv) {
 		if (!strcmp(*argv, "-d"))
 			mpd_db_dir = *++argv;
@@ -269,7 +297,7 @@ int main(int argc, char** argv) {
 
 	Window xparent = XRootWindow(xdisplay, xscreen);
 
-	unsigned int ww = 256, wh = 256, x = 0, y = 0;
+	unsigned x = 0, y = 0;
 	unsigned int border_width = 0;
 	/* are these two needed when border_width is 0? */
 	unsigned int border_color = BlackPixel(xdisplay, xscreen);
@@ -334,8 +362,10 @@ int main(int argc, char** argv) {
 
 	/* get currently playing song before waiting for new ones */
 	update_mpd_song();
+	imlib_render();
 
 	mpd_fd = mpd_connection_get_fd(connection);
+	mpd_check_error();
 
 	int xfd = ConnectionNumber(xdisplay);
 
@@ -350,8 +380,8 @@ int main(int argc, char** argv) {
 		}
 	};
 
-	if(!mpd_send_idle_mask(connection, MPD_IDLE_PLAYER))
-		die("Unable to send idle to mpd");
+	mpd_send_idle_mask(connection, MPD_IDLE_PLAYER);
+	mpd_check_error();
 
 	/* mpd event loop */
 	while (1) {
@@ -381,14 +411,18 @@ int main(int argc, char** argv) {
 						/* 	break; */
 					}
 				}
-				imlib_render(ww, wh);
+				imlib_render();
 			}
 			/* MPD event loop */
 			if (fds[1].revents & POLLIN) {
 				mpd_run_noidle(connection);
+				mpd_check_error();
+
 				update_mpd_song();
-				imlib_render(ww, wh);
+				imlib_render();
+
 				mpd_send_idle_mask(connection, MPD_IDLE_PLAYER);
+				mpd_check_error();
 			}
 		}
 	}
