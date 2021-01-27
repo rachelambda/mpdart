@@ -167,11 +167,6 @@ void update_mpd_song(void) {
 
 void imlib_render(int up_x, int up_y, int up_w, int up_h) {
 	/* Imlib render */
-	XWindowAttributes xwindow_attrs;
-	XGetWindowAttributes(xdisplay, xwindow, &xwindow_attrs);
-	int wx = xwindow_attrs.width,
-		wy = xwindow_attrs.width; // ensure 1:1
-
 	int w, h;
 
 	im_buffer = imlib_create_image(up_w, up_h);
@@ -206,7 +201,7 @@ void imlib_render(int up_x, int up_y, int up_w, int up_h) {
 
 	imlib_blend_image_onto_image(im_image, 0,
 			0, 0, w, h,
-			up_x, up_y, wx, wy);
+			up_x, up_y, up_w, up_h);
 	imlib_context_set_image(im_image);
 	imlib_free_image();
 
@@ -306,6 +301,8 @@ int main(int argc, char** argv) {
 
 	XSetWMNormalHints(xdisplay, xwindow, size_hints);
 
+	XFree(size_hints);
+
 	XSelectInput(xdisplay, xwindow, ExposureMask);
 	XMapWindow(xdisplay, xwindow);
 	set_window_name("mpdart");
@@ -364,12 +361,6 @@ int main(int argc, char** argv) {
 							XCloseDisplay(xdisplay);
 							die("Window Closed");
 							break; // ?
-						case ConfigureNotify:
-							wx = ev.xconfigure.x;
-							wy = ev.xconfigure.y;
-							ww = ev.xconfigure.width;
-							wh = ev.xconfigure.height;
-							break;
 						case Expose:
 							wx = ev.xexpose.x;
 							wy = ev.xexpose.y;
