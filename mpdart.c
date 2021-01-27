@@ -29,9 +29,10 @@ Window xwindow;
 GC gc;
 
 Imlib_Updates im_updates;
-Imlib_Image im_buffer, im_image;
+Imlib_Image im_buffer, im_image = 0;
 Imlib_Color_Range range;
 char* im_image_path;
+int im_w, im_h;
 
 
 void die(const char* msg) {
@@ -91,6 +92,47 @@ void set_image_path(char* path) {
 	im_image_path = path;
 }
 
+void imlib_update(void) {
+
+	if (im_image) {
+		imlib_context_set_image(im_image);
+		imlib_free_image();
+	}
+
+	if (!im_image_path) {
+		warn("No image path");
+		XClearWindow(xdisplay, xwindow);
+		return;
+	}
+
+	im_image = imlib_load_image(im_image_path);
+
+	if (!im_image) {
+		warn("Unable to open image");
+		XClearWindow(xdisplay, xwindow);
+		return;
+	}
+
+	imlib_context_set_image(im_image);
+
+	im_w = imlib_image_get_width();
+	im_h = imlib_image_get_height();
+
+}
+
+void imlib_render(int up_w, int up_h) {
+
+	imlib_context_set_image(im_buffer);
+
+	imlib_context_set_blend(1);
+	imlib_blend_image_onto_image(im_image, 0,
+			0, 0, im_w, im_h,
+			0, 0, up_w, up_h);
+	imlib_context_set_blend(0);
+
+	imlib_render_image_on_drawable(0, 0);
+}
+
 /* get currently playing song from mpd and update X window */
 void update_mpd_song(void) {
 	static int song_id;
@@ -101,10 +143,10 @@ void update_mpd_song(void) {
 	mpd_send_current_song(connection);
 	song = mpd_recv_song(connection);
 
-	set_image_path(0);
-
 	if (!song) {
 		fprintf(stderr, "Failed to get song from mpd\n");
+		set_image_path(0);
+		imlib_update();
 		set_window_name("None");
 		return;
 	}
@@ -151,6 +193,7 @@ void update_mpd_song(void) {
 				if (extension && (!strcmp(extension, ".jpg") || !strcmp(extension, ".png"))) {
 					printf("Using '%s' as album art.\n", ent->d_name);
 					set_image_path(asprintf("%s/%s", dirname, ent->d_name));
+				imlib_update();
 					break;
 				}
 			}
@@ -165,54 +208,6 @@ void update_mpd_song(void) {
 	old_song_id = song_id;
 
 	mpd_song_free(song);
-}
-
-void imlib_render(int up_w, int up_h) {
-	/* Imlib render */
-	int w, h;
-
-	im_buffer = imlib_create_image(up_w, up_h);
-	imlib_context_set_blend(1);
-
-	if (!im_buffer) {
-		warn("Unable to create buffer");
-		XClearWindow(xdisplay, xwindow);
-		return;
-	}
-
-	if (!im_image_path) {
-		warn("No image path");
-		XClearWindow(xdisplay, xwindow);
-		return;
-	}
-
-	im_image = imlib_load_image(im_image_path);
-
-	if (!im_image) {
-		warn("Unable to open image");
-		XClearWindow(xdisplay, xwindow);
-		return;
-	}
-
-	imlib_context_set_image(im_image);
-
-	w = imlib_image_get_width();
-	h = imlib_image_get_height();
-
-	imlib_context_set_image(im_buffer);
-
-	imlib_blend_image_onto_image(im_image, 0,
-			0, 0, w, h,
-			0, 0, up_w, up_h);
-	imlib_context_set_image(im_image);
-	imlib_free_image();
-
-	imlib_context_set_blend(0);
-	imlib_context_set_image(im_buffer);
-	imlib_render_image_on_drawable(0, 0);
-	imlib_free_image();
-
-	XFlush(xdisplay);
 }
 
 int main(int argc, char** argv) {
@@ -325,6 +320,15 @@ int main(int argc, char** argv) {
 
 	im_updates = imlib_updates_init();
 
+	/* 1024 is max size */
+	im_buffer = imlib_create_image(1024, 1024);
+
+	if (!im_buffer) {
+		die("Unable to create buffer");
+		XClearWindow(xdisplay, xwindow);
+	}
+
+
 	/* get currently playing song before waiting for new ones */
 	update_mpd_song();
 
@@ -345,6 +349,7 @@ int main(int argc, char** argv) {
 
 	if(!mpd_send_idle_mask(connection, MPD_IDLE_PLAYER))
 		die("Unable to send idle to mpd");
+
 
 	/* mpd event loop */
 	while (1) {
