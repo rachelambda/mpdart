@@ -107,6 +107,7 @@ void imlib_update(char* path) {
 
 	if (!im_image) {
 		warn("Unable to open image");
+		printf("%s\n", im_image_path);
 		XClearWindow(xdisplay, xwindow);
 		return;
 	}
@@ -121,6 +122,9 @@ void imlib_update(char* path) {
 }
 
 void imlib_render(int up_w, int up_h) {
+
+	if (!im_image || !im_image_path)
+		return;
 
 	imlib_blend_image_onto_image(im_image, 0,
 			0, 0, im_w, im_h,
