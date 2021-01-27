@@ -279,7 +279,7 @@ int main(int argc, char** argv) {
 	if (mpd_connection_get_error(connection) != MPD_ERROR_SUCCESS)
 		die(mpd_connection_get_error_message(connection));
 
-	const int* version = mpd_connection_get_server_version(connection);
+	const unsigned int* version = mpd_connection_get_server_version(connection);
 	printf("Connected to mpd server version %d.%d.%d\n", version[0], version[1], version[2]);
 
 	/* setup x */
