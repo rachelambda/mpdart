@@ -9,7 +9,7 @@ depends
 libX11
 libmpdclient
 libim2
-pkg-config (optional build time dependency, without it one might need to change the generated config.mk manually)
+pkg-config (optional build time dependency)
 
 building
 --------

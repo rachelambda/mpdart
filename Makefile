@@ -1,6 +1,6 @@
 .POSIX:
 include config.mk
-all: mpdart config.mk
+all: mpdart
 mpdart: mpdart.c
 	$(CC) $(CONFIG) $(CFLAGS) $(CXXFLAGS) -o $@ mpdart.c
 clean:
