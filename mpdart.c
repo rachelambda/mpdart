@@ -13,9 +13,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 
-/* TODO: do Imlib, fix name changing */
-
-/* LOADS of cleaning up to do */
+/* TODO image metadata images */
 
 /* mpd globals */
 struct mpd_connection* connection = 0;
@@ -37,8 +35,12 @@ char* im_image_path;
 
 
 void die(const char* msg) {
-	fprintf(stderr, "%s\n", msg);
+	fprintf(stderr, "FATAL: %s\n", msg);
 	exit(1);
+}
+
+void warn(const char* msg) {
+	fprintf(stderr, "WARNING: %s\n", msg);
 }
 
 /* error checking malloc */
@@ -97,10 +99,11 @@ void update_mpd_song(void) {
 	mpd_send_current_song(connection);
 	song = mpd_recv_song(connection);
 
+	set_image_path(0);
+
 	if (!song) {
 		fprintf(stderr, "Failed to get song from mpd\n");
 		set_window_name("None");
-		set_image_path(0);
 		return;
 	}
 
@@ -123,30 +126,35 @@ void update_mpd_song(void) {
 		dirname[len] = '\0';
 
 		/* account for .cue files */
-		{
-			char* basename = strrchr(path, '/');
-			basename = basename ? basename + 1 : path;
-			char* extension = strrchr(basename, '.');
-			if (extension) {
-				*(basename - 1) = '\0';
+		
+		for (char* cue = strstr(dirname, ".cue");
+				cue >= dirname; cue--) {
+			if (*cue == '/') {
+				*cue = '\0';
+				break;
 			}
 		}
 
 		DIR* dir = opendir(dirname);
 
-		struct dirent* ent;
-		while (ent = readdir(dir)) {
-			char* extension = strrchr(ent->d_name, '.');
-			/* TODO add more extensions */
-			if (extension && (!strcmp(extension, ".jpg") || !strcmp(extension, ".png"))) {
-				printf("Using '%s' as album art.\n", ent->d_name);
-				set_image_path(asprintf("%s/%s", dirname, ent->d_name));
-				break;
+		if (!dir) {
+			warn("Unable to open dir");
+		} else {
+			struct dirent* ent;
+			while (ent = readdir(dir)) {
+				char* extension = strrchr(ent->d_name, '.');
+				/* TODO add more extensions and match multiple extension
+				   and select one based on list of strings such as cover COVER
+				   art album etc */
+				if (extension && (!strcmp(extension, ".jpg") || !strcmp(extension, ".png"))) {
+					printf("Using '%s' as album art.\n", ent->d_name);
+					set_image_path(asprintf("%s/%s", dirname, ent->d_name));
+					break;
+				}
 			}
 		}
 
 		closedir(dir);
-
 
 		free(pretty_name);
 		free(path);
@@ -155,6 +163,57 @@ void update_mpd_song(void) {
 	old_song_id = song_id;
 
 	mpd_song_free(song);
+}
+
+void imlib_render(int up_x, int up_y, int up_w, int up_h) {
+	/* Imlib render */
+	XWindowAttributes xwindow_attrs;
+	XGetWindowAttributes(xdisplay, xwindow, &xwindow_attrs);
+	int wx = xwindow_attrs.width,
+		wy = xwindow_attrs.width; // ensure 1:1
+
+	int w, h;
+
+	im_buffer = imlib_create_image(up_w, up_h);
+	imlib_context_set_blend(1);
+
+	if (!im_buffer) {
+		warn("Unable to create buffer");
+		XClearWindow(xdisplay, xwindow);
+		return;
+	}
+
+	if (!im_image_path) {
+		warn("No image path");
+		XClearWindow(xdisplay, xwindow);
+		return;
+	}
+
+	im_image = imlib_load_image(im_image_path);
+
+	if (!im_image) {
+		warn("Unable to open image");
+		XClearWindow(xdisplay, xwindow);
+		return;
+	}
+
+	imlib_context_set_image(im_image);
+
+	w = imlib_image_get_width();
+	h = imlib_image_get_height();
+
+	imlib_context_set_image(im_buffer);
+
+	imlib_blend_image_onto_image(im_image, 0,
+			0, 0, w, h,
+			up_x, up_y, wx, wy);
+	imlib_context_set_image(im_image);
+	imlib_free_image();
+
+	imlib_context_set_blend(0);
+	imlib_context_set_image(im_buffer);
+	imlib_render_image_on_drawable(up_x, up_y);
+	imlib_free_image();
 }
 
 int main(int argc, char** argv) {
@@ -230,6 +289,23 @@ int main(int argc, char** argv) {
 			border_color,
 			background_color);
 
+	XSizeHints* size_hints = XAllocSizeHints();
+
+	if (!size_hints)
+		die("Unable to allocate memory");
+
+	size_hints->flags = PAspect | PMinSize | PMaxSize;
+	size_hints->min_width = 64;
+	size_hints->min_height = 64;
+	size_hints->max_width = 1024;
+	size_hints->max_height = 1024;
+	size_hints->min_aspect.x = 1;
+	size_hints->max_aspect.x = 1;
+	size_hints->min_aspect.y = 1;
+	size_hints->max_aspect.y = 1;
+
+	XSetWMNormalHints(xdisplay, xwindow, size_hints);
+
 	XSelectInput(xdisplay, xwindow, ExposureMask);
 	XMapWindow(xdisplay, xwindow);
 	set_window_name("mpdart");
@@ -271,29 +347,38 @@ int main(int argc, char** argv) {
 
 	/* mpd event loop */
 	while (1) {
-		int ready_fds = poll(fds, 2, 1000);
+		/* sleep for a day at a time */
+		int ready_fds = poll(fds, 2, 86400);
 		if (ready_fds < 0) {
 			die("Error in poll");
 		} else if (ready_fds > 0) {
 			/* X event loop */
 			if (fds[0].revents & POLLIN) {
-				XEvent ev;
-				XNextEvent(xdisplay, &ev);
+				int wx, wy, ww, wh;
+				while (XPending(xdisplay)) {
+					XEvent ev;
+					XNextEvent(xdisplay, &ev);
 
-				switch (ev.type) {
-					case ClientMessage:
-						if (ev.xclient.data.l[0] == wm_delete) {
+					switch (ev.type) {
+						case ClientMessage:
 							XCloseDisplay(xdisplay);
 							die("Window Closed");
-						}
-						break;
-					case ConfigureNotify:
-					case Expose:
-						im_updates = imlib_update_append_rect(im_updates,
-										 ev.xexpose.x, ev.xexpose.y,
-										 ev.xexpose.width, ev.xexpose.height);
-						break;
+							break; // ?
+						case ConfigureNotify:
+							wx = ev.xconfigure.x;
+							wy = ev.xconfigure.y;
+							ww = ev.xconfigure.width;
+							wh = ev.xconfigure.height;
+							break;
+						case Expose:
+							wx = ev.xexpose.x;
+							wy = ev.xexpose.y;
+							ww = ev.xexpose.width;
+							wh = ev.xexpose.height;
+							break;
+					}
 				}
+				imlib_render(wx, wy, ww, wh);
 			}
 			/* MPD event loop */
 			if (fds[1].revents & POLLIN) {
@@ -301,49 +386,6 @@ int main(int argc, char** argv) {
 				update_mpd_song();
 				mpd_send_idle_mask(connection, MPD_IDLE_PLAYER);
 			}
-		}
-		/* Imlib render */
-		XWindowAttributes xwindow_attrs;
-		XGetWindowAttributes(xdisplay, xwindow, &xwindow_attrs);
-		int wx = xwindow_attrs.width,
-			wy = xwindow_attrs.width;
-		/* int wx = 256, wy = 256; */
-		im_updates = imlib_updates_merge_for_rendering(im_updates,
-				wx, wy);
-		for (Imlib_Updates current_update = im_updates ; current_update;
-			current_update = imlib_updates_get_next(current_update)) {
-
-			int up_x, up_y, up_w, up_h, w, h;
-			imlib_updates_get_coordinates(current_update, 
-					&up_x, &up_y, &up_w, &up_h);
-
-			im_buffer = imlib_create_image(up_w, up_h);
-			imlib_context_set_blend(1);
-
-			if (!im_image_path)
-				die("TODO null image_path");
-
-			im_image = imlib_load_image(im_image_path);
-			imlib_context_set_image(im_image);
-
-			w = imlib_image_get_width();
-			h = imlib_image_get_height();
-
-			imlib_context_set_image(im_buffer);
-
-			if (!im_image)
-				die("Could not open image TODO, replace with warning and clear.");
-
-			imlib_blend_image_onto_image(im_image, 0,
-					0, 0, w, h,
-					up_x, up_y, wx, wy);
-			imlib_context_set_image(im_image);
-			imlib_free_image();
-
-			imlib_context_set_blend(0);
-			imlib_context_set_image(im_buffer);
-			imlib_render_image_on_drawable(up_x, up_y);
-			imlib_free_image();
 		}
 	}
 }
