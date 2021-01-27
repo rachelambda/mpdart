@@ -1,21 +1,169 @@
+#include <dirent.h>
+#include <stdarg.h>
 #include <stdlib.h>
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
+#include <poll.h>
+#include <sys/types.h>
 #include <unistd.h>
 
+#include <Imlib2.h>
 #include <mpd/client.h>
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
 
-char* mpd_host = 0;
-unsigned mpd_port = 0;
-unsigned mpd_timeout = 0;
+/* TODO: do Imlib, fix name changing */
+
+/* LOADS of cleaning up to do */
+
+/* mpd globals */
 struct mpd_connection* connection = 0;
-
+int mpd_fd = 0;
 char* mpd_db_dir = 0;
+
+Display* xdisplay;
+int xscreen;
+Visual* xvisual;
+Colormap xcolormap;
+int xdepth;
+Window xwindow;
+GC gc;
+
+Imlib_Updates im_updates;
+Imlib_Image im_buffer, im_image;
+Imlib_Color_Range range;
+char* im_image_path;
+
+
+void die(const char* msg) {
+	fprintf(stderr, "%s\n", msg);
+	exit(1);
+}
+
+/* error checking malloc */
+void* xmalloc(size_t size) {
+	void* ret = malloc(size);
+	if (!ret)
+		die("Unable to allocate memory");
+	return ret;
+}
+
+/* returns char pointer instead of writing to predefined one */
+char* asprintf(const char* fmt, ...) {
+	va_list ap;
+
+	va_start(ap, fmt);
+	/* +1 for null byte */
+	int len = vsnprintf(0, 0, fmt, ap) + 1;
+	va_end(ap);
+
+	char* ret = xmalloc(len);
+
+	/* vsnprintf fucks up ap, so reopen it for the second call */
+	va_start(ap, fmt);
+	vsnprintf(ret, len, fmt, ap);
+	va_end(ap);
+
+	return ret;
+}
+
+/* currently only works once... why? */
+void set_window_name(char* name) {
+	int len = strlen(name);
+
+	XTextProperty prop;
+
+	Xutf8TextListToTextProperty(xdisplay, &name, 1, XUTF8StringStyle,
+			&prop);
+	XSetWMName(xdisplay, xwindow, &prop);
+	XSetTextProperty(xdisplay, xwindow, &prop, XInternAtom(xdisplay, "_NET_WM_NAME", False));
+	XFree(prop.value);
+}
+
+void set_image_path(char* path) {
+	if (im_image_path)
+		free(im_image_path);
+	im_image_path = path;
+}
+
+/* get currently playing song from mpd and update X window */
+void update_mpd_song(void) {
+	static int song_id;
+	static int old_song_id = -1;
+
+	struct mpd_song* song;
+
+	mpd_send_current_song(connection);
+	song = mpd_recv_song(connection);
+
+	if (!song) {
+		fprintf(stderr, "Failed to get song from mpd\n");
+		set_window_name("None");
+		set_image_path(0);
+		return;
+	}
+
+	song_id = mpd_song_get_id(song);
+
+	if (song_id != old_song_id) {
+		char* pretty_name = asprintf("%s - %s",
+				mpd_song_get_tag(song, MPD_TAG_TITLE, 0), 
+				mpd_song_get_tag(song, MPD_TAG_ARTIST, 0));
+		char* path = asprintf("%s/%s",
+				mpd_db_dir, mpd_song_get_uri(song));
+
+		set_window_name(pretty_name);
+		printf("Now playing: '%s' from '%s'\n", pretty_name, path);
+
+		/* equivalent to shell dirname="${path%/*}" */
+		size_t len = strrchr(path, '/') - path;
+		char* dirname = xmalloc(len + 1);
+		strncpy(dirname, path, len);
+		dirname[len] = '\0';
+
+		/* account for .cue files */
+		{
+			char* basename = strrchr(path, '/');
+			basename = basename ? basename + 1 : path;
+			char* extension = strrchr(basename, '.');
+			if (extension) {
+				*(basename - 1) = '\0';
+			}
+		}
+
+		DIR* dir = opendir(dirname);
+
+		struct dirent* ent;
+		while (ent = readdir(dir)) {
+			char* extension = strrchr(ent->d_name, '.');
+			/* TODO add more extensions */
+			if (extension && (!strcmp(extension, ".jpg") || !strcmp(extension, ".png"))) {
+				printf("Using '%s' as album art.\n", ent->d_name);
+				set_image_path(asprintf("%s/%s", dirname, ent->d_name));
+				break;
+			}
+		}
+
+		closedir(dir);
+
+
+		free(pretty_name);
+		free(path);
+	}
+
+	old_song_id = song_id;
+
+	mpd_song_free(song);
+}
 
 int main(int argc, char** argv) {
 
 	/* parse args */
+	char* mpd_host = 0;
+	unsigned mpd_port = 0;
+	unsigned mpd_timeout = 0;
+
 	while (*++argv) {
 		if (!strcmp(*argv, "-d"))
 			mpd_db_dir = *++argv;
@@ -27,13 +175,10 @@ int main(int argc, char** argv) {
 			mpd_timeout = atoi(*++argv);
 	}
 	
-	if (!mpd_db_dir) {
-		fprintf(stderr, "Please specify mpd music directory with -d\n");
-		exit(1);
-	}
+	if (!mpd_db_dir)
+		die("Please specify mpd music directory with -d");
 
-
-	/* strip all '/'es from the end of it */
+	/* strip all '/'es from the end of mpd_db_dir */
 	{
 		int i = 0;
 		for (; mpd_db_dir[i]; i++);
@@ -41,55 +186,164 @@ int main(int argc, char** argv) {
 		mpd_db_dir[i+1] = '\0';
 	}
 	
+	/* set up mpd connection */
 	connection = mpd_connection_new(mpd_host, mpd_port, mpd_timeout);
 
-	if (!connection) {
-		fprintf(stderr, "Unable to allocate memory for mpd_connection struct\n");
-		exit(1);
-	}
+	if (!connection)
+		die("Unable to allocate memory for mpd_connection struct");
 
-	if (mpd_connection_get_error(connection) != MPD_ERROR_SUCCESS) {
-		fprintf(stderr, "%s\n", mpd_connection_get_error_message(connection));
-		exit(1);
-	}
+	if (mpd_connection_get_error(connection) != MPD_ERROR_SUCCESS)
+		die(mpd_connection_get_error_message(connection));
 
 	const int* version = mpd_connection_get_server_version(connection);
 	printf("Connected to mpd server version %d.%d.%d\n", version[0], version[1], version[2]);
 
-	int song_id;
-	int old_song_id = -1;
+	/* setup x */
+	XInitThreads();
 
+	xdisplay = XOpenDisplay(0);
+	if (!xdisplay)
+		die("Cannot open display");
+
+	xscreen   = XDefaultScreen(xdisplay);
+	gc        = DefaultGC(xdisplay, xscreen);
+	xvisual   = DefaultVisual(xdisplay, xscreen);
+	xdepth    = DefaultDepth(xdisplay, xscreen);
+	xcolormap = DefaultColormap(xdisplay, xscreen);
+
+	Window xparent = XRootWindow(xdisplay, xscreen);
+
+	unsigned int width = 256, height = 256, x = 0, y = 0;
+	unsigned int border_width = 0;
+	/* are these two needed when border_width is 0? */
+	unsigned int border_color = BlackPixel(xdisplay, xscreen);
+	unsigned int background_color = WhitePixel(xdisplay, xscreen);
+
+	xwindow = XCreateSimpleWindow(
+			xdisplay,
+			xparent,
+			x,
+			y,
+			width,
+			height,
+			border_width,
+			border_color,
+			background_color);
+
+	XSelectInput(xdisplay, xwindow, ExposureMask);
+	XMapWindow(xdisplay, xwindow);
+	set_window_name("mpdart");
+
+	Atom wm_delete = XInternAtom(xdisplay, "WM_DELETE_WINDOW", True);
+	XSetWMProtocols(xdisplay, xwindow, &wm_delete, 1);
+
+	/* setup Imlib */
+	imlib_set_cache_size(2048 * 1024);
+	imlib_set_color_usage(128);
+	imlib_context_set_dither(1);
+	imlib_context_set_display(xdisplay);
+	imlib_context_set_visual(xvisual);
+	imlib_context_set_colormap(xcolormap);
+	imlib_context_set_drawable(xwindow);
+
+	im_updates = imlib_updates_init();
+
+	/* get currently playing song before waiting for new ones */
+	update_mpd_song();
+
+	mpd_fd = mpd_connection_get_fd(connection);
+
+	int xfd = ConnectionNumber(xdisplay);
+
+	struct pollfd fds[2] = {
+		{
+			.fd = xfd,
+			.events = POLLIN
+		},
+		{
+			.fd = mpd_fd,
+			.events = POLLIN
+		}
+	};
+
+	if(!mpd_send_idle(connection))
+		die("Unable to send idle to mpd");
+
+	/* mpd event loop */
 	while (1) {
+		int ready_fds = poll(fds, 2, 1000);
+		if (ready_fds < 0) {
+			die("Error in poll");
+		} else if (ready_fds > 0) {
+			/* X event loop */
+			if (fds[0].revents & POLLIN) {
+				XEvent ev;
+				XNextEvent(xdisplay, &ev);
 
-		struct mpd_song* song;
-
-		mpd_send_current_song(connection);
-		song = mpd_recv_song(connection);
-
-		if (!song) {
-			fprintf(stderr, "failed to get mpd song\n");
-			/* TODO clear image */
-			goto wait;
+				switch (ev.type) {
+					case ClientMessage:
+						if (ev.xclient.data.l[0] == wm_delete) {
+							XCloseDisplay(xdisplay);
+							die("Window Closed");
+						}
+						break;
+					case ConfigureNotify:
+					case Expose:
+						im_updates = imlib_update_append_rect(im_updates,
+										 ev.xexpose.x, ev.xexpose.y,
+										 ev.xexpose.width, ev.xexpose.height);
+						break;
+				}
+			}
+			/* MPD event loop */
+			if (fds[1].revents & POLLIN) {
+				mpd_run_noidle(connection);
+				update_mpd_song();
+				mpd_send_idle_mask(connection, MPD_IDLE_PLAYER);
+			}
 		}
+		/* Imlib render */
+		XWindowAttributes xwindow_attrs;
+		XGetWindowAttributes(xdisplay, xwindow, &xwindow_attrs);
+		int wx = xwindow_attrs.width,
+			wy = xwindow_attrs.width;
+		/* int wx = 256, wy = 256; */
+		im_updates = imlib_updates_merge_for_rendering(im_updates,
+				wx, wy);
+		for (Imlib_Updates current_update = im_updates ; current_update;
+			current_update = imlib_updates_get_next(current_update)) {
 
-		song_id = mpd_song_get_id(song);
+			int up_x, up_y, up_w, up_h, w, h;
+			imlib_updates_get_coordinates(current_update, 
+					&up_x, &up_y, &up_w, &up_h);
 
-		if (song_id != old_song_id) {
-			/* TODO render image */
-			printf("Now playing: '%s' by '%s' from '%s/%s'\n",
-					mpd_song_get_tag(song, MPD_TAG_TITLE, 0), 
-					mpd_song_get_tag(song, MPD_TAG_ARTIST, 0), 
-					mpd_db_dir, mpd_song_get_uri(song));
+			im_buffer = imlib_create_image(up_w, up_h);
+			imlib_context_set_blend(1);
+
+			if (!im_image_path)
+				die("TODO null image_path");
+
+			im_image = imlib_load_image(im_image_path);
+			imlib_context_set_image(im_image);
+
+			w = imlib_image_get_width();
+			h = imlib_image_get_height();
+
+			imlib_context_set_image(im_buffer);
+
+			if (!im_image)
+				die("Could not open image TODO, replace with warning and clear.");
+
+			imlib_blend_image_onto_image(im_image, 0,
+					0, 0, w, h,
+					up_x, up_y, wx, wy);
+			imlib_context_set_image(im_image);
+			imlib_free_image();
+
+			imlib_context_set_blend(0);
+			imlib_context_set_image(im_buffer);
+			imlib_render_image_on_drawable(up_x, up_y);
+			imlib_free_image();
 		}
-
-		old_song_id = song_id;
-
-		mpd_song_free(song);
-
-wait:
-		mpd_send_idle_mask(connection, MPD_IDLE_PLAYER);
-		while (!mpd_recv_idle(connection, 1))
-			sleep(1);
 	}
-
 }

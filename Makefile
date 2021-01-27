@@ -1,8 +1,9 @@
 .POSIX:
 include config.mk
+LIBS=-lX11
 all: mpdart config.mk
 mpdart: mpdart.c
-	$(CC) $(CONFIG) $(CFLAGS) $(CXXFLAGS) -o $@ mpdart.c
+	$(CC) $(CONFIG) $(LIBS) $(CFLAGS) $(CXXFLAGS) -o $@ mpdart.c
 clean:
 	rm -f mpdart
 install: mpdart
