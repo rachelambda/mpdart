@@ -81,6 +81,8 @@ void set_window_name(char* name) {
 	XSetWMName(xdisplay, xwindow, &prop);
 	XSetTextProperty(xdisplay, xwindow, &prop, XInternAtom(xdisplay, "_NET_WM_NAME", False));
 	XFree(prop.value);
+
+	XFlush(xdisplay);
 }
 
 void set_image_path(char* path) {
@@ -165,7 +167,7 @@ void update_mpd_song(void) {
 	mpd_song_free(song);
 }
 
-void imlib_render(int up_x, int up_y, int up_w, int up_h) {
+void imlib_render(int up_w, int up_h) {
 	/* Imlib render */
 	int w, h;
 
@@ -201,14 +203,16 @@ void imlib_render(int up_x, int up_y, int up_w, int up_h) {
 
 	imlib_blend_image_onto_image(im_image, 0,
 			0, 0, w, h,
-			up_x, up_y, up_w, up_h);
+			0, 0, up_w, up_h);
 	imlib_context_set_image(im_image);
 	imlib_free_image();
 
 	imlib_context_set_blend(0);
 	imlib_context_set_image(im_buffer);
-	imlib_render_image_on_drawable(up_x, up_y);
+	imlib_render_image_on_drawable(0, 0);
 	imlib_free_image();
+
+	XFlush(xdisplay);
 }
 
 int main(int argc, char** argv) {
@@ -267,7 +271,7 @@ int main(int argc, char** argv) {
 
 	Window xparent = XRootWindow(xdisplay, xscreen);
 
-	unsigned int width = 256, height = 256, x = 0, y = 0;
+	unsigned int ww = 256, wh = 256, x = 0, y = 0;
 	unsigned int border_width = 0;
 	/* are these two needed when border_width is 0? */
 	unsigned int border_color = BlackPixel(xdisplay, xscreen);
@@ -278,8 +282,8 @@ int main(int argc, char** argv) {
 			xparent,
 			x,
 			y,
-			width,
-			height,
+			ww,
+			wh,
 			border_width,
 			border_color,
 			background_color);
@@ -303,7 +307,7 @@ int main(int argc, char** argv) {
 
 	XFree(size_hints);
 
-	XSelectInput(xdisplay, xwindow, ExposureMask);
+	XSelectInput(xdisplay, xwindow, ExposureMask | StructureNotifyMask);
 	XMapWindow(xdisplay, xwindow);
 	set_window_name("mpdart");
 
@@ -339,7 +343,7 @@ int main(int argc, char** argv) {
 		}
 	};
 
-	if(!mpd_send_idle(connection))
+	if(!mpd_send_idle_mask(connection, MPD_IDLE_PLAYER))
 		die("Unable to send idle to mpd");
 
 	/* mpd event loop */
@@ -351,7 +355,6 @@ int main(int argc, char** argv) {
 		} else if (ready_fds > 0) {
 			/* X event loop */
 			if (fds[0].revents & POLLIN) {
-				int wx, wy, ww, wh;
 				while (XPending(xdisplay)) {
 					XEvent ev;
 					XNextEvent(xdisplay, &ev);
@@ -361,20 +364,23 @@ int main(int argc, char** argv) {
 							XCloseDisplay(xdisplay);
 							die("Window Closed");
 							break; // ?
+						case ConfigureNotify:
+							ww = ev.xconfigure.width;
+							wh = ev.xconfigure.height;
+							break;
 						case Expose:
-							wx = ev.xexpose.x;
-							wy = ev.xexpose.y;
 							ww = ev.xexpose.width;
 							wh = ev.xexpose.height;
 							break;
 					}
 				}
-				imlib_render(wx, wy, ww, wh);
+				imlib_render(ww, wh);
 			}
 			/* MPD event loop */
 			if (fds[1].revents & POLLIN) {
 				mpd_run_noidle(connection);
 				update_mpd_song();
+				imlib_render(ww, wh);
 				mpd_send_idle_mask(connection, MPD_IDLE_PLAYER);
 			}
 		}
