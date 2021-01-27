@@ -86,13 +86,11 @@ void set_window_name(char* name) {
 	XFlush(xdisplay);
 }
 
-void set_image_path(char* path) {
+void imlib_update(char* path) {
+
 	if (im_image_path)
 		free(im_image_path);
 	im_image_path = path;
-}
-
-void imlib_update(void) {
 
 	if (im_image) {
 		imlib_context_set_image(im_image);
@@ -118,23 +116,23 @@ void imlib_update(void) {
 	im_w = imlib_image_get_width();
 	im_h = imlib_image_get_height();
 
+	imlib_context_set_image(im_buffer);
+
 }
 
 void imlib_render(int up_w, int up_h) {
 
-	imlib_context_set_image(im_buffer);
-
-	imlib_context_set_blend(1);
 	imlib_blend_image_onto_image(im_image, 0,
 			0, 0, im_w, im_h,
 			0, 0, up_w, up_h);
-	imlib_context_set_blend(0);
 
 	imlib_render_image_on_drawable(0, 0);
+
 }
 
 /* get currently playing song from mpd and update X window */
 void update_mpd_song(void) {
+
 	static int song_id;
 	static int old_song_id = -1;
 
@@ -145,8 +143,7 @@ void update_mpd_song(void) {
 
 	if (!song) {
 		fprintf(stderr, "Failed to get song from mpd\n");
-		set_image_path(0);
-		imlib_update();
+		imlib_update(0);
 		set_window_name("None");
 		return;
 	}
@@ -192,8 +189,7 @@ void update_mpd_song(void) {
 				   art album etc */
 				if (extension && (!strcmp(extension, ".jpg") || !strcmp(extension, ".png"))) {
 					printf("Using '%s' as album art.\n", ent->d_name);
-					set_image_path(asprintf("%s/%s", dirname, ent->d_name));
-				imlib_update();
+					imlib_update(asprintf("%s/%s", dirname, ent->d_name));
 					break;
 				}
 			}
@@ -203,6 +199,7 @@ void update_mpd_song(void) {
 
 		free(pretty_name);
 		free(path);
+
 	}
 
 	old_song_id = song_id;
@@ -350,7 +347,6 @@ int main(int argc, char** argv) {
 	if(!mpd_send_idle_mask(connection, MPD_IDLE_PLAYER))
 		die("Unable to send idle to mpd");
 
-
 	/* mpd event loop */
 	while (1) {
 		/* sleep for a day at a time */
@@ -373,10 +369,10 @@ int main(int argc, char** argv) {
 							ww = ev.xconfigure.width;
 							wh = ev.xconfigure.height;
 							break;
-						case Expose:
-							ww = ev.xexpose.width;
-							wh = ev.xexpose.height;
-							break;
+						/* case Expose: */
+						/* 	ww = ev.xexpose.width; */
+						/* 	wh = ev.xexpose.height; */
+						/* 	break; */
 					}
 				}
 				imlib_render(ww, wh);
