@@ -13,7 +13,9 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 
-/* TODO image metadata images */
+/* TODO image metadata images
+   TODO handle disconnection errors
+   TODO fix stutter on resize */
 
 /* mpd globals */
 struct mpd_connection* connection = 0;
