@@ -24,10 +24,10 @@
 /* mpd globals */
 struct mpd_connection* connection = 0;
 int mpd_fd = 0;
-char* mpd_db_dir = 0;
-char* mpd_host = 0;
-unsigned mpd_port = 0;
-unsigned mpd_timeout = 0;
+char* mpd_db_dir;
+char* mpd_host;
+unsigned mpd_port;
+unsigned mpd_timeout;
 
 /* x globals */
 Display* xdisplay;
@@ -270,10 +270,14 @@ void mpd_check_error(void) {
 int main(int argc, char** argv) {
 
 	/* get args from environment */
-	mpd_db_dir =  getenv("MPDART_DIR");
-	mpd_host =    getenv("MPDART_HOST");
-	mpd_port =    getenv("MPDART_PORT");
-	mpd_timeout = getenv("MPDART_TIMEOUT");
+	mpd_db_dir =    getenv("MPDART_DIR");
+	mpd_host =      getenv("MPDART_HOST");
+
+	char* port =    getenv("MPDART_PORT");
+	mpd_port =      port ? atoi(port) : 0;
+
+	char* timeout = getenv("MPDART_TIMEOUT");
+	mpd_timeout =   timeout ? atoi(timeout) : 0;
 
 	/* parse args */
 	while (*++argv) {
