@@ -1,10 +1,13 @@
 mpdart
 ======
 
-mpdart is a simple X application that displays the album art of the currently playing mpd song and lets you toggle play pause. It spends almost all of it's time idle and according to top it uses `0.0%` of my CPU and `0.1%` of my ram.
+mpdart is a simple X application that displays the album art of the currently playing mpd song and lets you toggle play pause. It spends almost all of it's time idle and only uses `0.1%` of my RAM and `0.1%` of my CPU according to top.
 
 Depends
 -------
+
+	C compiler
+	make
 
 	libX11
 	libmpdclient
@@ -21,11 +24,11 @@ Building
 Usage
 -----
 
-There are three flags:
+There are four flags:
 
 	mpdart -d musicdir -h host -p port -t timeout # timeout is milliseconds
 
-Though only -d is needed:
+Though all but -d have default values:
 
 	mpdart -d ~/music
 
