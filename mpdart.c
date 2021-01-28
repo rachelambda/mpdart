@@ -19,8 +19,7 @@
 #define DEFAULTSIZE 256
 #endif
 
-/* TODO image metadata images
-   TODO fix stutter on resize */
+/* TODO image metadata images */
 
 /* mpd globals */
 struct mpd_connection* connection = 0;
@@ -86,6 +85,7 @@ char* asprintf(const char* fmt, ...) {
 	return ret;
 }
 
+/* set the name of the x window */
 void set_window_name(char* name) {
 	int len = strlen(name);
 
@@ -100,10 +100,19 @@ void set_window_name(char* name) {
 	XFlush(xdisplay);
 }
 
+/* path must be dynamically allocated */
 void imlib_update(char* path) {
 
-	if (im_image_path)
+	/* if we already have a path we might want to free it */
+	if (im_image_path) {
+		/* if the path is the same, just free the new path and return */
+		if (path && !strcmp(path, im_image_path)) {
+			free(path);
+			return;
+		}
+		/* otherwise just free the old path */
 		free(im_image_path);
+	}
 	im_image_path = path;
 
 	if (im_image) {
@@ -346,7 +355,8 @@ int main(int argc, char** argv) {
 
 	XFree(size_hints);
 
-	XSelectInput(xdisplay, xwindow, StructureNotifyMask
+	XSelectInput(xdisplay, xwindow, ExposureMask
+			| StructureNotifyMask
 			| ButtonPressMask);
 	XMapWindow(xdisplay, xwindow);
 	set_window_name("mpdart");
@@ -412,10 +422,16 @@ int main(int argc, char** argv) {
 					XNextEvent(xdisplay, &ev);
 
 					switch (ev.type) {
+						/* close window */
 						case ClientMessage:
 							XCloseDisplay(xdisplay);
 							die("Window Closed");
-							break; // ?
+							break;
+						/* redraw when off screen */
+						case Expose:
+							render = true;
+							break;
+						/* respond to resize */
 						case ConfigureNotify:
 							if (ww != ev.xconfigure.width || wh != ev.xconfigure.height) {
 								ww = ev.xconfigure.width;
@@ -423,6 +439,7 @@ int main(int argc, char** argv) {
 								render = true;
 							}
 							break;
+						/* toggle pause on press */
 						case ButtonPress:
 							printf("Toggling pause\n");
 
