@@ -34,7 +34,7 @@ Though all but -d have default values:
 
 These options can also be configured in the enviorment variables `MPDART_DIR`, `MPDART_HOST`, `MPDART_PORT`, and `MPDART_TIMEOUT`.
 
-To make these changes persistent, add them to your `~/.profile`.
+To make these changes persistent, export them in your `~/.profile`.
 
 Once mpdart is running you can press the window to toggle mpd's pause/play.
 
