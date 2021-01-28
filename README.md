@@ -1,6 +1,8 @@
 mpdart
 ======
 
+![preview gif](https://depsterr.com/res/mpdart_preview.gif)
+
 mpdart is a simple X application that displays the album art of the currently playing mpd song and lets you toggle play pause. It spends almost all of it's time idle and only uses `0.1%` of my RAM and `0.1%` of my CPU according to top.
 
 Depends
