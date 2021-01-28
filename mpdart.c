@@ -1,5 +1,6 @@
 #include <dirent.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -12,6 +13,11 @@
 #include <mpd/client.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+
+/* let user define a size on compiler the commandline */
+#ifndef DEFAULTSIZE
+#define DEFAULTSIZE 256
+#endif
 
 /* TODO image metadata images
    TODO fix stutter on resize */
@@ -32,14 +38,14 @@ Colormap xcolormap;
 int xdepth;
 Window xwindow;
 GC gc;
-unsigned int ww = 256, wh = 256; 
+unsigned int ww = DEFAULTSIZE, wh = DEFAULTSIZE; 
 
 /* imlib globals */
 Imlib_Updates im_updates;
 Imlib_Image im_buffer, im_image = 0;
 Imlib_Color_Range range;
 char* im_image_path;
-int im_w, im_h;
+int im_w = DEFAULTSIZE, im_h = DEFAULTSIZE;
 
 
 /* print to stderr and exit */
@@ -108,10 +114,11 @@ void imlib_update(char* path) {
 	if (!im_image_path) {
 		warn("No image path");
 		XClearWindow(xdisplay, xwindow);
+		XFlush(xdisplay);
 		return;
 	}
 
-	im_image = imlib_load_image(im_image_path);
+	im_image = imlib_load_image_immediately(im_image_path);
 
 	if (!im_image) {
 		warn("Unable to open image");
@@ -162,6 +169,8 @@ void update_mpd_song(void) {
 
 	song_id = mpd_song_get_id(song);
 
+	bool updated = false;
+
 	if (song_id != old_song_id) {
 		char* pretty_name = asprintf("%s - %s",
 				mpd_song_get_tag(song, MPD_TAG_TITLE, 0), 
@@ -202,10 +211,14 @@ void update_mpd_song(void) {
 				if (extension && (!strcmp(extension, ".jpg") || !strcmp(extension, ".png"))) {
 					printf("Using '%s' as album art.\n", ent->d_name);
 					imlib_update(asprintf("%s/%s", dirname, ent->d_name));
+					updated = true;
 					break;
 				}
 			}
 		}
+
+		if (!updated)
+			imlib_update(0);
 
 		closedir(dir);
 
@@ -333,7 +346,8 @@ int main(int argc, char** argv) {
 
 	XFree(size_hints);
 
-	XSelectInput(xdisplay, xwindow, ExposureMask | StructureNotifyMask);
+	XSelectInput(xdisplay, xwindow, StructureNotifyMask
+			| ButtonPressMask);
 	XMapWindow(xdisplay, xwindow);
 	set_window_name("mpdart");
 
@@ -392,6 +406,7 @@ int main(int argc, char** argv) {
 		} else if (ready_fds > 0) {
 			/* X event loop */
 			if (fds[0].revents & POLLIN) {
+				bool render = false;
 				while (XPending(xdisplay)) {
 					XEvent ev;
 					XNextEvent(xdisplay, &ev);
@@ -402,16 +417,29 @@ int main(int argc, char** argv) {
 							die("Window Closed");
 							break; // ?
 						case ConfigureNotify:
-							ww = ev.xconfigure.width;
-							wh = ev.xconfigure.height;
+							if (ww != ev.xconfigure.width || wh != ev.xconfigure.height) {
+								ww = ev.xconfigure.width;
+								wh = ev.xconfigure.height;
+								render = true;
+							}
 							break;
-						/* case Expose: */
-						/* 	ww = ev.xexpose.width; */
-						/* 	wh = ev.xexpose.height; */
-						/* 	break; */
+						case ButtonPress:
+							printf("Toggling pause\n");
+
+							mpd_run_noidle(connection);
+							mpd_check_error();
+
+							/* deprecated but they provide nothing better so fuck them */
+							mpd_run_toggle_pause(connection);
+							mpd_check_error();
+
+							mpd_send_idle_mask(connection, MPD_IDLE_PLAYER);
+							mpd_check_error();
+							break;
 					}
 				}
-				imlib_render();
+				if (render)
+					imlib_render();
 			}
 			/* MPD event loop */
 			if (fds[1].revents & POLLIN) {
