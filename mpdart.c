@@ -14,7 +14,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 
-/* let user define a size on compiler the commandline */
+/* let user define a size on the compiler command line if they want to */
 #ifndef DEFAULTSIZE
 #define DEFAULTSIZE 256
 #endif
@@ -269,6 +269,12 @@ void mpd_check_error(void) {
 
 int main(int argc, char** argv) {
 
+	/* get args from environment */
+	mpd_db_dir =  getenv("MPDART_DIR");
+	mpd_host =    getenv("MPDART_HOST");
+	mpd_port =    getenv("MPDART_PORT");
+	mpd_timeout = getenv("MPDART_TIMEOUT");
+
 	/* parse args */
 	while (*++argv) {
 		if (!strcmp(*argv, "-d"))
@@ -282,7 +288,7 @@ int main(int argc, char** argv) {
 	}
 	
 	if (!mpd_db_dir)
-		die("Please specify mpd music directory with -d");
+		die("Please specify mpd music directory with -d, or in the MPDART_DIR environment variable");
 
 	/* strip all '/'es from the end of mpd_db_dir */
 	{
