@@ -17,3 +17,25 @@ building
 ./configure.sh
 make
 make install # supports PREFIX and DESTDIR
+
+contributing
+------------
+
+pull requests
+~~~~~~~~~~~~~
+If you like github you can contribute by sending in a pull request at
+https://github.com/depsterr/mpdart
+
+patches
+~~~~~~~
+If you don't like github you can contribute by emailing me at
+depsterr at protonmail dot com with the output of
+
+	git format-patch
+
+after you've commited your changes to your local tree.
+
+credits
+-------
+
+Big thanks to my friend wooosh for helping me debug and develop this :)
