@@ -43,11 +43,11 @@ Once mpdart is running you can press the window to toggle mpd's pause/play.
 Contributing
 ------------
 
-### pull requests
+### Pull requests
 If you like github you can contribute by sending in a pull request at
 https://github.com/depsterr/mpdart
 
-### patches
+### Patches
 If you don't like github you can contribute by emailing me at
 depsterr at protonmail dot com with the output of
 
