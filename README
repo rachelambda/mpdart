@@ -14,9 +14,22 @@ pkg-config (optional build time dependency)
 building
 --------
 
-./configure.sh
-make
-make install # supports PREFIX and DESTDIR
+	./configure.sh
+	make
+	make install # supports PREFIX and DESTDIR
+
+usage
+-----
+
+There are three flags:
+
+	mpdart -d musicdir -h host -p port
+
+Though only -d is needed:
+
+	mpdart -d ~/music
+
+Once mpdart is running you can press the window to toggle mpd's pause/play.
 
 contributing
 ------------
