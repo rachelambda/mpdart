@@ -449,17 +449,22 @@ int main(int argc, char** argv) {
 							break;
 						/* toggle pause on press */
 						case ButtonPress:
-							DEBUG("Toggling pause\n");
 
-							mpd_run_noidle(connection);
-							mpd_check_error();
+							if (ev.xbutton.button == Button1) {
 
-							/* deprecated but they provide nothing better so fuck them */
-							mpd_run_toggle_pause(connection);
-							mpd_check_error();
+								DEBUG("Toggling pause\n");
 
-							mpd_send_idle_mask(connection, MPD_IDLE_PLAYER);
-							mpd_check_error();
+								mpd_run_noidle(connection);
+								mpd_check_error();
+
+								/* deprecated but they provide nothing better so fuck them */
+								mpd_run_toggle_pause(connection);
+								mpd_check_error();
+
+								mpd_send_idle_mask(connection, MPD_IDLE_PLAYER);
+								mpd_check_error();
+
+							}
 							break;
 					}
 				}
