@@ -1,8 +1,12 @@
 .POSIX:
+.PHONY: clean install uninstall all debug
 include config.mk
 all: mpdart
 mpdart: mpdart.c
 	$(CC) $(CONFIG) $(CFLAGS) $(CXXFLAGS) -o $@ mpdart.c
+debug: mpdart_debug
+mpdart_debug: mpdart.c
+	$(CC) $(CONFIG) -Og -g -DDEBUG -o $@ mpdart.c
 clean:
 	rm -f mpdart
 install: mpdart
