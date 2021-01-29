@@ -138,7 +138,7 @@ void imlib_update(char* path) {
 
 	if (!im_image) {
 		warn("Unable to open image");
-		printf("%s\n", im_image_path);
+		DEBUG(im_image_path);
 		XClearWindow(xdisplay, xwindow);
 		return;
 	}
@@ -177,7 +177,7 @@ void update_mpd_song(void) {
 	song = mpd_recv_song(connection);
 
 	if (!song) {
-		fprintf(stderr, "Failed to get song from mpd\n");
+		warn("Failed to get song from mpd");
 		imlib_update(0);
 		set_window_name("None");
 		return;
@@ -225,8 +225,10 @@ void update_mpd_song(void) {
 				   and select one based on list of strings such as cover COVER
 				   art album etc */
 				if (extension && (!strcmp(extension, ".jpg") || !strcmp(extension, ".png"))) {
-					printf("Using '%s' as album art.\n", ent->d_name);
-					imlib_update(asprintf("%s/%s", dirname, ent->d_name));
+					/* reuse pointer, is now filename, not extension */
+					extension = asprintf("%s/%s", dirname, ent->d_name);
+					DEBUG(extension);
+					imlib_update(extension);
 					updated = true;
 					break;
 				}
@@ -320,9 +322,6 @@ int main(int argc, char** argv) {
 
 	const unsigned int* version = mpd_connection_get_server_version(connection);
 	printf("Connected to mpd server version %d.%d.%d\n", version[0], version[1], version[2]);
-
-	/* setup x */
-	XInitThreads();
 
 	xdisplay = XOpenDisplay(0);
 	if (!xdisplay)
@@ -418,7 +417,7 @@ int main(int argc, char** argv) {
 	/* mpd event loop */
 	while (1) {
 		/* sleep for a day at a time */
-		printf("Sleeping\n");
+		DEBUG("Sleeping\n");
 		int ready_fds = poll(fds, 2, 86400);
 		if (ready_fds < 0) {
 			die("Error in poll");
@@ -450,7 +449,7 @@ int main(int argc, char** argv) {
 							break;
 						/* toggle pause on press */
 						case ButtonPress:
-							printf("Toggling pause\n");
+							DEBUG("Toggling pause\n");
 
 							mpd_run_noidle(connection);
 							mpd_check_error();
