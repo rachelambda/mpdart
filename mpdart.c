@@ -14,6 +14,13 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 
+#ifdef DEBUG
+# undef DEBUG
+# define DEBUG(msg) printf("%d: %s", __LINE__, msg)
+#else
+# define DEBUG(_)
+#endif
+
 /* let user define a size on the compiler command line if they want to */
 #ifndef DEFAULTSIZE
 #define DEFAULTSIZE 256
@@ -41,7 +48,7 @@ unsigned int ww = DEFAULTSIZE, wh = DEFAULTSIZE;
 
 /* imlib globals */
 Imlib_Updates im_updates;
-Imlib_Image im_buffer, im_image = 0;
+Imlib_Image im_image = 0;
 Imlib_Color_Range range;
 char* im_image_path;
 int im_w = DEFAULTSIZE, im_h = DEFAULTSIZE;
@@ -141,20 +148,20 @@ void imlib_update(char* path) {
 	im_w = imlib_image_get_width();
 	im_h = imlib_image_get_height();
 
-	imlib_context_set_image(im_buffer);
-
 }
 
 void imlib_render(void) {
 
-	if (!im_image || !im_image_path)
+	DEBUG("Rendering image\n");
+	if (!im_image || !im_image_path) {
+		printf("No image to render\n");
 		return;
+	}
 
-	imlib_blend_image_onto_image(im_image, 0,
-			0, 0, im_w, im_h,
-			0, 0, ww, wh);
-
-	imlib_render_image_on_drawable(0, 0);
+	
+	DEBUG("Rendering onto drawable\n");
+	imlib_render_image_on_drawable_at_size(0, 0, ww, wh);
+	DEBUG("Returning from render\n");
 
 }
 
@@ -385,15 +392,6 @@ int main(int argc, char** argv) {
 
 	im_updates = imlib_updates_init();
 
-	/* 1024 is max size */
-	im_buffer = imlib_create_image(1024, 1024);
-
-	if (!im_buffer) {
-		die("Unable to create buffer");
-		XClearWindow(xdisplay, xwindow);
-	}
-
-
 	/* get currently playing song before waiting for new ones */
 	update_mpd_song();
 	imlib_render();
@@ -420,6 +418,7 @@ int main(int argc, char** argv) {
 	/* mpd event loop */
 	while (1) {
 		/* sleep for a day at a time */
+		printf("Sleeping\n");
 		int ready_fds = poll(fds, 2, 86400);
 		if (ready_fds < 0) {
 			die("Error in poll");
