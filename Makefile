@@ -3,7 +3,7 @@
 include config.mk
 all: mpdart
 mpdart: mpdart.c
-	$(CC) $(CONFIG) $(CFLAGS) $(CXXFLAGS) -o $@ mpdart.c
+	$(CC) $(CONFIG) $(CFLAGS) $(CPPFLAGS) -o $@ mpdart.c
 debug: mpdart_debug
 mpdart_debug: mpdart.c
 	$(CC) $(CONFIG) -Og -g -DDEBUG -o $@ mpdart.c
