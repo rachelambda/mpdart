@@ -450,19 +450,24 @@ int main(int argc, char** argv) {
 						/* toggle pause on press */
 						case ButtonPress:
 
-							if (ev.xbutton.button == Button1) {
+							switch (ev.xbutton.button) {
+								case Button1:
+									DEBUG("Toggling pause\n");
 
-								DEBUG("Toggling pause\n");
+									mpd_run_noidle(connection);
+									mpd_check_error();
 
-								mpd_run_noidle(connection);
-								mpd_check_error();
+									/* deprecated but they provide nothing better so fuck them */
+									mpd_run_toggle_pause(connection);
+									mpd_check_error();
 
-								/* deprecated but they provide nothing better so fuck them */
-								mpd_run_toggle_pause(connection);
-								mpd_check_error();
-
-								mpd_send_idle_mask(connection, MPD_IDLE_PLAYER);
-								mpd_check_error();
+									mpd_send_idle_mask(connection, MPD_IDLE_PLAYER);
+									mpd_check_error();
+									break;
+								case Button3:
+									DEBUG("Exiting due to MB2 pree");
+									exit(0);
+									break;
 
 							}
 							break;

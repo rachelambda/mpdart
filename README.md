@@ -38,7 +38,7 @@ These options can also be configured in the enviorment variables `MPDART_DIR`, `
 
 To make these changes persistent, export them in your `~/.profile`.
 
-Once mpdart is running you can press the window to toggle mpd's pause/play.
+Once mpdart is running you can left click the window to toggle mpd's pause/play or right click it to close it.
 
 Contributing
 ------------
