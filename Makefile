@@ -8,7 +8,7 @@ debug: mpdart_debug
 mpdart_debug: mpdart.c
 	$(CC) $(CONFIG) -Og -g -DDEBUG -o $@ mpdart.c
 clean:
-	rm -f mpdart
+	rm -f mpdart mpdart_debug
 install: mpdart
 	install -Dm755 mpdart $(DESTDIR)$(PREFIX)/bin/mpdart
 uninstall:

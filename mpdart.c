@@ -16,17 +16,22 @@
 
 #ifdef DEBUG
 # undef DEBUG
-# define DEBUG(msg) printf("%d: %s", __LINE__, msg)
+# define DEBUG(msg) printf("%d: %s\n", __LINE__, msg)
 #else
 # define DEBUG(_)
 #endif
 
-/* let user define a size on the compiler command line if they want to */
+/* let user define a defualt window size on the compiler command line if they want to */
 #ifndef DEFAULTSIZE
 #define DEFAULTSIZE 256
 #endif
 
 /* TODO image metadata images */
+
+/* Image filename end priority list */
+const char*  name_priority[] = { "front", "Front", "cover", "Cover", 0 };
+const size_t name_priority_lengths[] = { 9, 9, 9, 9, 0 };
+const char*  image_extensions[] = { ".png", ".jpg", 0 };
 
 /* mpd globals */
 struct mpd_connection* connection = 0;
@@ -72,6 +77,39 @@ void* xmalloc(size_t size) {
 		die("Unable to allocate memory");
 	return ret;
 }
+
+/* error checking realloc */
+void* xrealloc(void* ptr, size_t size) {
+	void* ret = realloc(ptr, size);
+	if (!ret)
+		die("Unable to reallocate memory");
+	return ret;
+}
+
+/* return 1 if a filename is an image name, otherwise return 0 */
+/* this fucks up if you name a folder .jpg or .png, but at that point you had it coming */
+int is_image_name(char* f) {
+	char* extension = strrchr(f, '.');
+	for (int n = 0; image_extensions[n]; n++) {
+		if (!strcmp(extension, image_extensions[n]))
+			return 1;
+	}
+	return 0;
+}
+
+/* returns the name most likely to refer to album art */
+char* most_relevant_name(char** names, size_t name_cnt) {
+	for (int n = 0; name_priority[n]; n++) {
+		DEBUG(name_priority[n]);
+		for (int i = 0; i < name_cnt; i++) {
+			DEBUG(names[i]);
+			if (strstr(names[i], name_priority[n]))
+				return names[i];
+		}
+	}
+	return names[0];
+}
+
 
 /* returns char pointer instead of writing to predefined one */
 char* asprintf(const char* fmt, ...) {
@@ -218,21 +256,29 @@ void update_mpd_song(void) {
 		if (!dir) {
 			warn("Unable to open dir");
 		} else {
+			size_t name_cnt = 0;
+			size_t name_cap = 20;
+			char** names = xmalloc(sizeof(char*) * name_cap);
 			struct dirent* ent;
 			while (ent = readdir(dir)) {
-				char* extension = strrchr(ent->d_name, '.');
-				/* TODO add more extensions and match multiple extension
-				   and select one based on list of strings such as cover COVER
-				   art album etc */
-				if (extension && (!strcmp(extension, ".jpg") || !strcmp(extension, ".png"))) {
-					/* reuse pointer, is now filename, not extension */
-					extension = asprintf("%s/%s", dirname, ent->d_name);
-					DEBUG(extension);
-					imlib_update(extension);
-					updated = true;
-					break;
+				if (is_image_name(ent->d_name)) {
+					name_cnt++;
+					if (name_cnt > name_cap) {
+						name_cap *= 2;
+						names = xrealloc(names, sizeof(char*) * name_cap);
+					}
+					names[name_cnt-1] = ent->d_name;
 				}
 			}
+
+			if (name_cnt > 0) {
+				char* name = most_relevant_name(names, name_cnt);
+				name = asprintf("%s/%s", dirname, name);
+				DEBUG(name);
+				imlib_update(name);
+				updated = true;
+			}
+			free(names);
 		}
 
 		if (!updated)
