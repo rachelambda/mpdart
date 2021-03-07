@@ -90,9 +90,13 @@ void* xrealloc(void* ptr, size_t size) {
 /* this fucks up if you name a folder .jpg or .png, but at that point you had it coming */
 int is_image_name(char* f) {
 	char* extension = strrchr(f, '.');
+	if (!extension) {
+		return 0;
+	}
 	for (int n = 0; image_extensions[n]; n++) {
-		if (!strcmp(extension, image_extensions[n]))
+		if (!strcmp(extension, image_extensions[n])) {
 			return 1;
+		}
 	}
 	return 0;
 }
