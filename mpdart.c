@@ -196,7 +196,7 @@ void imlib_render(void) {
 
 	DEBUG("Rendering image\n");
 	if (!im_image || !im_image_path) {
-		printf("No image to render\n");
+		warn("No image to render");
 		return;
 	}
 
