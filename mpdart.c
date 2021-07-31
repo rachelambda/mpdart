@@ -31,7 +31,7 @@
 /* Image filename end priority list */
 const char*  name_priority[] = { "front", "Front", "cover", "Cover", 0 };
 const size_t name_priority_lengths[] = { 9, 9, 9, 9, 0 };
-const char*  image_extensions[] = { ".png", ".jpg", 0 };
+const char*  image_extensions[] = { ".png", ".jpg", ".PNG", ".JPG", 0 };
 
 /* mpd globals */
 struct mpd_connection* connection = 0;
